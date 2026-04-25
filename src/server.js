@@ -150,7 +150,7 @@ const server = http.createServer(async (request, response) => {
       return sendJson(
         response,
         200,
-        await sendTextWithReplyFallback({
+        await sendDedupedTextWithReplyFallback({
           chatGuid: required(body?.chatGuid, "chatGuid"),
           address: body?.address || null,
           text: rendered.text,
@@ -939,37 +939,21 @@ async function sendReply(reply) {
     const selectedMessageGuid = getOutgoingThreadTarget(reply.incoming);
     if (text) {
       const rendered = renderMarkdownRichText(text);
-      const dedupeClaim = outgoingDedupe.claim({
+      const result = await sendDedupedTextWithReplyFallback({
         chatGuid,
         address: reply.incoming.handle,
         text: rendered.text,
+        attributedBody: rendered.attributedBody,
+        selectedMessageGuid,
+        partIndex: reply.incoming.partIndex || 0,
       });
-      if (!dedupeClaim.ok) {
-        console.warn(
-          `${new Date().toISOString()} skipped duplicate outgoing text ${chatGuid || reply.incoming.handle || ""}`,
-        );
-        results.push({ status: "skipped_duplicate_outgoing" });
-        continue;
-      }
-      let result;
-      try {
-        result = await sendTextWithReplyFallback({
+      if (result?.status !== "skipped_duplicate_outgoing") {
+        recordBlueBubblesResult(result, {
           chatGuid,
           address: reply.incoming.handle,
           text: rendered.text,
-          attributedBody: rendered.attributedBody,
-          selectedMessageGuid,
-          partIndex: reply.incoming.partIndex || 0,
         });
-      } catch (error) {
-        outgoingDedupe.release(dedupeClaim.key);
-        throw error;
       }
-      recordBlueBubblesResult(result, {
-        chatGuid,
-        address: reply.incoming.handle,
-        text: rendered.text,
-      });
       results.push(result);
     }
     const attachments = Array.isArray(message?.attachments)
@@ -993,6 +977,36 @@ async function sendReply(reply) {
     }
   }
   return results;
+}
+
+async function sendDedupedTextWithReplyFallback({
+  chatGuid,
+  address,
+  text,
+  attributedBody = null,
+  selectedMessageGuid,
+  partIndex = 0,
+}) {
+  const dedupeClaim = outgoingDedupe.claim({ chatGuid, address, text });
+  if (!dedupeClaim.ok) {
+    console.warn(
+      `${new Date().toISOString()} skipped duplicate outgoing text ${chatGuid || address || ""}`,
+    );
+    return { status: "skipped_duplicate_outgoing" };
+  }
+  try {
+    return await sendTextWithReplyFallback({
+      chatGuid,
+      address,
+      text,
+      attributedBody,
+      selectedMessageGuid,
+      partIndex,
+    });
+  } catch (error) {
+    outgoingDedupe.release(dedupeClaim.key);
+    throw error;
+  }
 }
 
 async function sendTextWithReplyFallback({
