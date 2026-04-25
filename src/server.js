@@ -843,10 +843,7 @@ function startTypingController(incoming) {
   const chatGuid = incoming.chatGuid;
   if (!chatGuid) return async () => {};
   if (!config.typingIndicatorsEnabled) {
-    awaitableStopTyping(incoming);
-    return async () => {
-      await stopTypingRepeated(incoming);
-    };
+    return async () => {};
   }
 
   const previous = activeTypingControllers.get(chatGuid);
@@ -889,16 +886,6 @@ function startTypingController(incoming) {
   return async () => {
     await controller.stop({ reason: "final", followUp: true });
   };
-}
-
-function awaitableStopTyping(incoming) {
-  stopTypingRepeated(incoming).catch((error) => {
-    console.warn(
-      `${new Date().toISOString()} initial typing stop failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  });
 }
 
 function scheduleTypingStopFollowUps(incoming, reason) {
