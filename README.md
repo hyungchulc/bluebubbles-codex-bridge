@@ -156,6 +156,8 @@ Planned Codex runner improvements:
 - choose a specific Codex Desktop thread by name or id
 - create a dedicated bridge thread during setup
 - support multiple conversations with explicit routing
+- inspect and change the selected model from the bridge
+- inspect and change the selected reasoning/thinking level from the bridge
 
 ## License
 
