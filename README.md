@@ -14,7 +14,7 @@ The goal is to keep iMessage transport local through BlueBubbles while letting C
 
 ## Demo
 
-Demo video: https://github.com/hyungchulc/bluebubbles-codex-bridge/releases/download/demo-2026-04-25/bluebubbles-codex-bridge-demo-2026-04-25.mp4
+https://github.com/user-attachments/assets/571fe322-5f11-4271-8904-a1785d789de6
 
 ## Codex Thread Model
 
