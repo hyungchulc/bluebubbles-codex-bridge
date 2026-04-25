@@ -102,11 +102,14 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 200, await blueBubbles.markUnread(required(body?.chatGuid, "chatGuid")));
     }
     if (request.method === "POST" && url.pathname === "/bluebubbles/typing/start") {
-      await readJson(request);
-      return sendJson(response, 200, {
-        status: "disabled",
-        message: "Typing indicators are disabled for the bridge.",
-      });
+      const body = await readJson(request);
+      if (!config.typingIndicatorsEnabled) {
+        return sendJson(response, 200, {
+          status: "disabled",
+          message: "Typing indicators are disabled for the bridge.",
+        });
+      }
+      return sendJson(response, 200, await blueBubbles.startTyping(required(body?.chatGuid, "chatGuid")));
     }
     if (request.method === "POST" && url.pathname === "/bluebubbles/typing/stop") {
       const body = await readJson(request);
