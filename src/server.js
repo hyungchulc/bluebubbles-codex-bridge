@@ -50,6 +50,7 @@ const incomingDedupeTtlMs = 10 * 60 * 1000;
 const incomingBundleDelayMs = Number(process.env.INCOMING_BUNDLE_DELAY_MS || 1800);
 const seenIncoming = new Map();
 const pendingIncomingBundles = new Map();
+const activeTypingControllers = new Map();
 const recentMessages = loadRecentMessages();
 const outgoingDedupe = createOutgoingDedupe({
   ttlMs: config.outgoingDedupeTtlMs,
@@ -839,29 +840,60 @@ async function stopTypingRepeated(incoming, { immediateOnly = false } = {}) {
 }
 
 function startTypingController(incoming) {
-  let stopped = false;
-  let keepAliveTimer = null;
+  const chatGuid = incoming.chatGuid;
+  if (!chatGuid) return async () => {};
 
-  bestEffortBlueBubbles("typing-start", incoming, () =>
-    incoming.chatGuid ? blueBubbles.startTyping(incoming.chatGuid) : null,
-  ).catch(() => {});
-
-  if (incoming.chatGuid) {
-    keepAliveTimer = setInterval(() => {
-      if (stopped) return;
-      bestEffortBlueBubbles("typing-keepalive", incoming, () =>
-        blueBubbles.startTyping(incoming.chatGuid),
-      ).catch(() => {});
-    }, 12000);
-    keepAliveTimer.unref?.();
+  const previous = activeTypingControllers.get(chatGuid);
+  if (previous) {
+    previous.stop({ reason: "superseded" }).catch(() => {});
   }
 
-  return async () => {
-    if (stopped) return;
-    stopped = true;
-    if (keepAliveTimer) clearInterval(keepAliveTimer);
-    await stopTypingRepeated(incoming, { immediateOnly: true });
+  let stopped = false;
+  let keepAliveTimer = null;
+  let followUpTimers = [];
+  const controller = {
+    stop: async ({ reason = "done", followUp = false } = {}) => {
+      if (stopped) return;
+      stopped = true;
+      if (keepAliveTimer) clearInterval(keepAliveTimer);
+      for (const timer of followUpTimers) clearTimeout(timer);
+      followUpTimers = [];
+      if (activeTypingControllers.get(chatGuid) === controller) {
+        activeTypingControllers.delete(chatGuid);
+      }
+      await stopTypingRepeated(incoming, { immediateOnly: true });
+      if (followUp) scheduleTypingStopFollowUps(incoming, reason);
+    },
   };
+
+  activeTypingControllers.set(chatGuid, controller);
+
+  bestEffortBlueBubbles("typing-start", incoming, () =>
+    blueBubbles.startTyping(chatGuid),
+  ).catch(() => {});
+
+  keepAliveTimer = setInterval(() => {
+    if (stopped || activeTypingControllers.get(chatGuid) !== controller) return;
+    bestEffortBlueBubbles("typing-keepalive", incoming, () =>
+      blueBubbles.startTyping(chatGuid),
+    ).catch(() => {});
+  }, 12000);
+  keepAliveTimer.unref?.();
+
+  return async () => {
+    await controller.stop({ reason: "final", followUp: true });
+  };
+}
+
+function scheduleTypingStopFollowUps(incoming, reason) {
+  for (const delayMs of [2000, 6000]) {
+    const timer = setTimeout(() => {
+      bestEffortBlueBubbles(`typing-stop-followup-${reason}-${delayMs}`, incoming, () =>
+        incoming.chatGuid ? blueBubbles.stopTyping(incoming.chatGuid) : null,
+      ).catch(() => {});
+    }, delayMs);
+    timer.unref?.();
+  }
 }
 
 async function sendPending(id, body) {
