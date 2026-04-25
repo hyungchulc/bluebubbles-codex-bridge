@@ -55,6 +55,10 @@ export function getConfig() {
     ),
     autoSend: parseBool(process.env.BRIDGE_AUTO_SEND, false),
     outgoingDedupeTtlMs: Number(process.env.OUTGOING_DEDUPE_TTL_MS || 60_000),
+    typingIndicatorsEnabled: parseBool(
+      process.env.TYPING_INDICATORS_ENABLED,
+      false,
+    ),
     responseTimeoutMs: Number(process.env.CODEX_RESPONSE_TIMEOUT_MS || 900000),
     allowedChatGuids: parseList(process.env.ALLOWED_CHAT_GUIDS),
     allowedHandles: parseList(process.env.ALLOWED_HANDLES),

@@ -25,6 +25,7 @@ Thread selection and named-thread routing are planned future work.
 - Downloads incoming attachments to local disk.
 - Optionally transcribes local audio files when `OPENAI_API_KEY` is configured.
 - Marks voice messages as played when using the patched BlueBubbles server/helper branches.
+- Keeps typing indicators disabled by default because some iMessage/BlueBubbles setups leave stale indicators visible.
 - Sends the prompt into a locally running Codex Desktop window through the local CDP/debug surface.
 - Uses the currently open Codex Desktop thread.
 - Queues or sends replies back through BlueBubbles.
@@ -105,6 +106,7 @@ See `.env.example` for the full list. The key ones are:
 - `ALLOWED_HANDLES`
 - `OPENAI_API_KEY`
 - `BRIDGE_SYSTEM_PROMPT` or `BRIDGE_SYSTEM_PROMPT_FILE`
+- `TYPING_INDICATORS_ENABLED`
 
 Use `BRIDGE_SYSTEM_PROMPT_FILE` for your own persona or operating rules instead of hardcoding private instructions into the repo.
 
