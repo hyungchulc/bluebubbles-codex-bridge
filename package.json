@@ -1,0 +1,17 @@
+{
+  "name": "bluebubbles-codex-bridge",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Self-hosted local bridge from BlueBubbles iMessage webhooks to a user-owned Codex Desktop session",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "probe:codex": "node scripts/probe-codex.js",
+    "probe:bluebubbles": "node scripts/probe-bluebubbles.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
