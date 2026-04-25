@@ -419,7 +419,7 @@ async function processIncomingBundle(items) {
     try {
       const result = await codex.askWithMessages(prompt, {
         onMessage: async (message) => {
-          if (isFinalAssistantMessage(message)) {
+          if (isOutgoingAssistantMessage(message)) {
             await stopTypingNow();
           }
           const reply = {
@@ -764,8 +764,8 @@ function resultIdPrefix(message) {
   return `stream-${message.id || Date.now()}`;
 }
 
-function isFinalAssistantMessage(message) {
-  return message?.phase === "final_answer";
+function isOutgoingAssistantMessage(message) {
+  return Boolean(message?.text);
 }
 
 async function bestEffortBlueBubbles(label, incoming, fn) {
@@ -886,7 +886,7 @@ function startTypingController(incoming) {
 }
 
 function scheduleTypingStopFollowUps(incoming, reason) {
-  for (const delayMs of [2000, 6000]) {
+  for (const delayMs of [1500, 4000, 9000, 15000]) {
     const timer = setTimeout(() => {
       bestEffortBlueBubbles(`typing-stop-followup-${reason}-${delayMs}`, incoming, () =>
         incoming.chatGuid ? blueBubbles.stopTyping(incoming.chatGuid) : null,
