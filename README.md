@@ -12,6 +12,10 @@ This started as a practical replacement for a brittle local iMessage automation 
 
 The goal is to keep iMessage transport local through BlueBubbles while letting Codex Desktop handle the agent side.
 
+## Demo
+
+Demo video: https://github.com/hyungchulc/bluebubbles-codex-bridge/releases/download/demo-2026-04-25/bluebubbles-codex-bridge-demo-2026-04-25.mp4
+
 ## Codex Thread Model
 
 This bridge uses the currently open Codex Desktop thread. It does not create, select, or route to a named Codex thread yet. Before starting the bridge, open the Codex Desktop conversation you want the bridge to use.
