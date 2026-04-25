@@ -4,6 +4,12 @@ Self-hosted local bridge from BlueBubbles iMessage webhooks to a user-owned Code
 
 This is an experimental local automation project. It does not bypass authentication, does not provide hosted messaging infrastructure, and is not affiliated with or endorsed by OpenAI, Apple, or BlueBubbles.
 
+## Why
+
+This started as a practical replacement for a brittle local iMessage automation stack. OpenClaw-style control was useful for proving the idea, but it was too unstable for daily use. Meanwhile, Codex Desktop kept improving as an actual local operator: better tool access, better long-running task handling, and especially useful desktop capabilities such as Computer Use.
+
+The goal is to keep iMessage transport local through BlueBubbles while letting Codex Desktop handle the agent side.
+
 ## What It Does
 
 - Receives BlueBubbles webhooks for incoming iMessages.
