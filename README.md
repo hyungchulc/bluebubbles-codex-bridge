@@ -19,27 +19,14 @@ https://github.com/user-attachments/assets/571fe322-5f11-4271-8904-a1785d789de6
 ## How It Works
 
 ```mermaid
-flowchart LR
-  phone["iMessage chat"] --> bluebubbles["BlueBubbles Server"]
-  bluebubbles --> webhook["Webhook /webhook/bluebubbles"]
-  webhook --> bridge["BlueBubbles Codex Bridge"]
+flowchart TB
+  imessage["1. iMessage arrives"]
+  bluebubbles["2. BlueBubbles sends a webhook"]
+  bridge["3. Local bridge prepares the Codex prompt"]
+  codex["4. Current Codex Desktop thread handles the task"]
+  reply["5. Bridge sends the reply back through BlueBubbles"]
 
-  bridge --> guard["Allowlist, read receipts, attachment download"]
-  guard --> media{"Audio or attachments?"}
-  media -->|yes| localFiles["Local attachment files"]
-  media -->|no| prompt["Prompt builder"]
-  localFiles --> prompt
-
-  prompt --> codex["Open Codex Desktop thread"]
-  codex --> tools["Codex tools: shell, Computer Use, browser, MCP"]
-  tools --> final["Assistant final response"]
-  final --> sender["Reply sender"]
-  sender --> bluebubbles
-  bluebubbles --> phone
-
-  bridge --> helper["Local helper endpoints"]
-  helper --> receipts["read, played, typing, reactions, files, voice"]
-  receipts --> bluebubbles
+  imessage --> bluebubbles --> bridge --> codex --> reply
 ```
 
 ## Codex Thread Model
