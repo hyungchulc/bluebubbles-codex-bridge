@@ -16,6 +16,32 @@ The goal is to keep iMessage transport local through BlueBubbles while letting C
 
 https://github.com/user-attachments/assets/571fe322-5f11-4271-8904-a1785d789de6
 
+## How It Works
+
+```mermaid
+flowchart LR
+  phone["iMessage chat"] --> bluebubbles["BlueBubbles Server"]
+  bluebubbles --> webhook["Webhook /webhook/bluebubbles"]
+  webhook --> bridge["BlueBubbles Codex Bridge"]
+
+  bridge --> guard["Allowlist, read receipts, attachment download"]
+  guard --> media{"Audio or attachments?"}
+  media -->|yes| localFiles["Local attachment files"]
+  media -->|no| prompt["Prompt builder"]
+  localFiles --> prompt
+
+  prompt --> codex["Open Codex Desktop thread"]
+  codex --> tools["Codex tools: shell, Computer Use, browser, MCP"]
+  tools --> final["Assistant final response"]
+  final --> sender["Reply sender"]
+  sender --> bluebubbles
+  bluebubbles --> phone
+
+  bridge --> helper["Local helper endpoints"]
+  helper --> receipts["read, played, typing, reactions, files, voice"]
+  receipts --> bluebubbles
+```
+
 ## Codex Thread Model
 
 This bridge uses the currently open Codex Desktop thread. It does not create, select, or route to a named Codex thread yet. Before starting the bridge, open the Codex Desktop conversation you want the bridge to use.
