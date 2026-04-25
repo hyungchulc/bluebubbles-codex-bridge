@@ -1,8 +1,10 @@
 # BlueBubbles Codex Bridge
 
-Self-hosted local bridge from BlueBubbles iMessage webhooks to a user-owned Codex Desktop session.
+Self-hosted local macOS bridge from BlueBubbles iMessage webhooks to a user-owned Codex Desktop session.
 
 This is an experimental local automation project. It does not bypass authentication, does not provide hosted messaging infrastructure, and is not affiliated with or endorsed by OpenAI, Apple, or BlueBubbles.
+
+This currently targets macOS only. It depends on BlueBubbles, iMessage, Codex Desktop, and local macOS app automation/debug surfaces.
 
 ## Why
 
@@ -14,7 +16,8 @@ The goal is to keep iMessage transport local through BlueBubbles while letting C
 
 - Receives BlueBubbles webhooks for incoming iMessages.
 - Marks incoming messages as read.
-- Transcribes incoming audio attachments when `OPENAI_API_KEY` is configured.
+- Downloads incoming attachments to local disk.
+- Optionally transcribes local audio files when `OPENAI_API_KEY` is configured.
 - Marks voice messages as played when using the patched BlueBubbles server/helper branches.
 - Sends the prompt into a locally running Codex Desktop window through the local CDP/debug surface.
 - Queues or sends replies back through BlueBubbles.
@@ -39,7 +42,7 @@ BRIDGE_AUTO_SEND=false
 
 With auto-send off, replies are queued and must be confirmed through the local pending endpoint. Only enable auto-send after testing with your own account or a dedicated test chat.
 
-Do not commit `.env`, logs, state files, attachments, message GUIDs, chat logs, OpenAI keys, BlueBubbles passwords, Apple ID details, Find My locations, or Calendar data.
+Do not commit `.env`, logs, state files, downloaded attachments, audio transcript caches, message GUIDs, chat logs, OpenAI keys, BlueBubbles passwords, Apple ID details, Find My locations, or Calendar data.
 
 ## Setup
 
@@ -123,7 +126,9 @@ Keep `BRIDGE_AUTO_SEND=false` until Codex has answered correctly, read/played re
 - `POST /bluebubbles/voice/send`
 - `POST /audio/transcribe`
 
-## Media
+## Audio And Media
+
+Incoming media is handled as local files downloaded from BlueBubbles into `ATTACHMENT_DIR`. Audio transcription is optional. If enabled, the bridge reads the local audio file and sends it to the configured OpenAI-compatible transcription endpoint.
 
 Screenshots or videos are not required for the first public version. A short sanitized demo GIF can help later, but it should show a fake/test contact, fake content, and no real message metadata.
 

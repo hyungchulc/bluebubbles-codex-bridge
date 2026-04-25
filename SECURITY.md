@@ -8,7 +8,7 @@ Do not publish:
 - BlueBubbles passwords or API tokens
 - OpenAI API keys
 - real chat GUIDs, message GUIDs, handles, phone numbers, or email addresses
-- logs, attachment downloads, audio transcripts, screenshots, or screen recordings with real content
+- logs, downloaded attachments, audio transcript caches, screenshots, or screen recordings with real content
 - Apple ID details, Find My locations, Calendar databases, or other local private data
 
 Recommended defaults:
@@ -19,3 +19,5 @@ Recommended defaults:
 - Test with your own account or a dedicated test chat first.
 
 Codex Desktop CDP support uses a local debug surface and should be treated as experimental. Do not expose the debug port to an untrusted network.
+
+This project currently targets macOS only. Incoming media is stored as local files before any optional transcription step.
