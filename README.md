@@ -47,20 +47,21 @@ Do not commit `.env`, logs, state files, attachments, message GUIDs, chat logs, 
 2. Copy `.env.example` to `.env`.
 3. Fill in your local BlueBubbles URL and password.
 4. Configure an allowlist with `ALLOWED_CHAT_GUIDS` or `ALLOWED_HANDLES`.
-5. Start Codex Desktop with remote debugging:
+5. Review `prompts/default-system-prompt.md` and customize it for your assistant.
+6. Start Codex Desktop with remote debugging:
 
 ```sh
 scripts/open-codex-debug.sh
 ```
 
-6. Probe both sides:
+7. Probe both sides:
 
 ```sh
 npm run probe:bluebubbles
 npm run probe:codex
 ```
 
-7. Start the bridge:
+8. Start the bridge:
 
 ```sh
 npm start
@@ -96,6 +97,14 @@ See `.env.example` for the full list. The key ones are:
 - `BRIDGE_SYSTEM_PROMPT` or `BRIDGE_SYSTEM_PROMPT_FILE`
 
 Use `BRIDGE_SYSTEM_PROMPT_FILE` for your own persona or operating rules instead of hardcoding private instructions into the repo.
+
+On first setup, send a test iMessage such as:
+
+```text
+Set yourself up for this bridge. Ask me what you need before turning on auto-send.
+```
+
+Keep `BRIDGE_AUTO_SEND=false` until Codex has answered correctly, read/played receipts work, and you have confirmed the pending-send flow.
 
 ## Local Endpoints
 
