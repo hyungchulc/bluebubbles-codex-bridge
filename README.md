@@ -12,6 +12,12 @@ This started as a practical replacement for a brittle local iMessage automation 
 
 The goal is to keep iMessage transport local through BlueBubbles while letting Codex Desktop handle the agent side.
 
+## Codex Thread Model
+
+This bridge uses the currently open Codex Desktop thread. It does not create, select, or route to a named Codex thread yet. Before starting the bridge, open the Codex Desktop conversation you want the bridge to use.
+
+Thread selection and named-thread routing are planned future work.
+
 ## What It Does
 
 - Receives BlueBubbles webhooks for incoming iMessages.
@@ -20,6 +26,7 @@ The goal is to keep iMessage transport local through BlueBubbles while letting C
 - Optionally transcribes local audio files when `OPENAI_API_KEY` is configured.
 - Marks voice messages as played when using the patched BlueBubbles server/helper branches.
 - Sends the prompt into a locally running Codex Desktop window through the local CDP/debug surface.
+- Uses the currently open Codex Desktop thread.
 - Queues or sends replies back through BlueBubbles.
 - Provides local helper endpoints for read, played, typing stop, reactions, attachments, and voice sends.
 
@@ -143,6 +150,12 @@ message transport -> agent runner -> reply sender
 BlueBubbles is the first transport. Telegram, Discord, Slack, email, or other messaging apps can be added later as separate transport modules without tying the project to iMessage only.
 
 Codex Desktop CDP is the first agent runner. It is experimental and may break if the Codex Desktop app changes its local debug behavior. Future backends could include Codex CLI or the OpenAI API.
+
+Planned Codex runner improvements:
+
+- choose a specific Codex Desktop thread by name or id
+- create a dedicated bridge thread during setup
+- support multiple conversations with explicit routing
 
 ## License
 
