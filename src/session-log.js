@@ -3,13 +3,18 @@ import os from "node:os";
 import path from "node:path";
 
 const SESSIONS_DIR = path.join(os.homedir(), ".codex", "sessions");
+const DEFAULT_INITIAL_SCAN_BYTES = 16 * 1024 * 1024;
+const INITIAL_SCAN_BYTES = Number(
+  process.env.CODEX_SESSION_INITIAL_SCAN_BYTES || DEFAULT_INITIAL_SCAN_BYTES,
+);
 
 export async function waitForCodexReply({ requestId, sinceMs, timeoutMs }) {
   const deadline = Date.now() + timeoutMs;
+  const scanner = new SessionReplyScanner(requestId);
   while (Date.now() < deadline) {
     const files = listRecentSessionFiles(sinceMs - 60_000);
     for (const file of files) {
-      const hit = parseReplyFromFile(file, requestId);
+      const hit = scanner.scanFile(file);
       if (hit) return hit;
     }
     await sleep(1000);
@@ -19,10 +24,11 @@ export async function waitForCodexReply({ requestId, sinceMs, timeoutMs }) {
 
 export async function waitForCodexReplies({ requestId, sinceMs, timeoutMs }) {
   const deadline = Date.now() + timeoutMs;
+  const scanner = new SessionReplyScanner(requestId);
   while (Date.now() < deadline) {
     const files = listRecentSessionFiles(sinceMs - 60_000);
     for (const file of files) {
-      const hit = parseRepliesFromFile(file, requestId);
+      const hit = scanner.scanFile(file);
       if (hit?.complete && hit.messages.length > 0) return hit;
     }
     await sleep(1000);
@@ -37,13 +43,14 @@ export async function streamCodexReplies({
   onMessage,
 }) {
   const deadline = Date.now() + timeoutMs;
+  const scanner = new SessionReplyScanner(requestId);
   const sent = new Set();
   let lastHit = null;
 
   while (Date.now() < deadline) {
     const files = listRecentSessionFiles(sinceMs - 60_000);
     for (const file of files) {
-      const hit = parseRepliesFromFile(file, requestId);
+      const hit = scanner.scanFile(file);
       if (!hit) continue;
       lastHit = hit;
       for (const message of hit.messages) {
@@ -78,7 +85,8 @@ export function listRecentSessionFiles(sinceMs) {
 }
 
 function parseReplyFromFile(file, requestId) {
-  const hit = parseRepliesFromFile(file, requestId);
+  const scanner = new SessionReplyScanner(requestId, { initialScanBytes: Infinity });
+  const hit = scanner.scanFile(file);
   if (!hit || hit.messages.length === 0) return null;
   return {
     file,
@@ -87,32 +95,85 @@ function parseReplyFromFile(file, requestId) {
   };
 }
 
-function parseRepliesFromFile(file, requestId) {
-  const text = fs.readFileSync(file, "utf8");
-  if (!text.includes(requestId)) return null;
+class SessionReplyScanner {
+  constructor(requestId, { initialScanBytes = INITIAL_SCAN_BYTES } = {}) {
+    this.requestId = requestId;
+    this.initialScanBytes = initialScanBytes;
+    this.files = new Map();
+  }
 
-  let seenRequest = false;
-  let complete = false;
-  let completedAt = null;
-  let sessionId = null;
-  const messages = [];
-  const seenMessageKeys = new Set();
+  scanFile(file) {
+    const state = this.stateForFile(file);
+    const text = this.readNewText(file, state);
+    if (!text) return state.messages.length > 0 ? this.hit(file, state) : null;
 
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.trim()) continue;
+    const lines = `${state.carry}${text}`.split(/\r?\n/);
+    state.carry = lines.pop() || "";
+    for (const line of lines) {
+      this.parseLine(state, line);
+    }
+    return state.messages.length > 0 ? this.hit(file, state) : null;
+  }
+
+  stateForFile(file) {
+    let state = this.files.get(file);
+    if (state) return state;
+    state = {
+      offset: null,
+      carry: "",
+      seenRequest: false,
+      complete: false,
+      completedAt: null,
+      sessionId: null,
+      messages: [],
+      seenMessageKeys: new Set(),
+    };
+    this.files.set(file, state);
+    return state;
+  }
+
+  readNewText(file, state) {
+    const stat = fs.statSync(file);
+    if (state.offset === null || stat.size < state.offset) {
+      const windowSize = Number.isFinite(this.initialScanBytes)
+        ? Math.max(0, Math.min(stat.size, this.initialScanBytes))
+        : stat.size;
+      state.offset = stat.size - windowSize;
+      state.carry = "";
+    }
+    if (stat.size <= state.offset) return "";
+
+    const length = stat.size - state.offset;
+    const buffer = Buffer.allocUnsafe(length);
+    const fd = fs.openSync(file, "r");
+    try {
+      fs.readSync(fd, buffer, 0, length, state.offset);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const startedMidFile = state.offset > 0 && state.carry === "";
+    state.offset = stat.size;
+    const text = buffer.toString("utf8");
+    if (!startedMidFile) return text;
+    const newline = text.search(/\r?\n/);
+    return newline >= 0 ? text.slice(newline + 1) : "";
+  }
+
+  parseLine(state, line) {
+    if (!line.trim()) return;
     let entry;
     try {
       entry = JSON.parse(line);
     } catch {
-      continue;
+      return;
     }
     if (entry.type === "session_meta" && entry.payload?.id) {
-      sessionId = entry.payload.id;
+      state.sessionId = entry.payload.id;
     }
 
     const serialized = JSON.stringify(entry);
-    if (serialized.includes(requestId)) seenRequest = true;
-    if (!seenRequest) continue;
+    if (serialized.includes(this.requestId)) state.seenRequest = true;
+    if (!state.seenRequest) return;
 
     const payload = entry.payload;
     if (
@@ -123,9 +184,9 @@ function parseRepliesFromFile(file, requestId) {
       const text = extractMessageText(payload);
       if (text) {
         const key = payload.id || `${payload.phase || "assistant"}:${text}`;
-        if (!seenMessageKeys.has(key)) {
-          seenMessageKeys.add(key);
-          messages.push({
+        if (!state.seenMessageKeys.has(key)) {
+          state.seenMessageKeys.add(key);
+          state.messages.push({
             id: payload.id || null,
             phase: payload.phase || "assistant",
             text,
@@ -134,12 +195,12 @@ function parseRepliesFromFile(file, requestId) {
       }
     }
     if (entry.type === "response_item" && payload?.type === "image_generation_call") {
-      const attachment = imageAttachmentFromCall({ sessionId, payload });
+      const attachment = imageAttachmentFromCall({ sessionId: state.sessionId, payload });
       if (attachment) {
         const key = payload.id || `${attachment.filePath}:${attachment.name}`;
-        if (!seenMessageKeys.has(key)) {
-          seenMessageKeys.add(key);
-          messages.push({
+        if (!state.seenMessageKeys.has(key)) {
+          state.seenMessageKeys.add(key);
+          state.messages.push({
             id: payload.id || null,
             phase: "attachment",
             text: "",
@@ -149,13 +210,13 @@ function parseRepliesFromFile(file, requestId) {
       }
     }
     if (entry.type === "event_msg" && payload?.type === "task_complete") {
-      complete = true;
-      completedAt = payload.completed_at || null;
+      state.complete = true;
+      state.completedAt = payload.completed_at || null;
       const finalAnswer = payload.last_agent_message || null;
       if (finalAnswer) {
-        const last = messages.at(-1);
+        const last = state.messages.at(-1);
         if (!last || last.text !== finalAnswer) {
-          messages.push({
+          state.messages.push({
             id: "task_complete",
             phase: "final_answer",
             text: finalAnswer,
@@ -165,9 +226,14 @@ function parseRepliesFromFile(file, requestId) {
     }
   }
 
-  return messages.length > 0
-    ? { file, messages, complete, completedAt }
-    : null;
+  hit(file, state) {
+    return {
+      file,
+      messages: state.messages,
+      complete: state.complete,
+      completedAt: state.completedAt,
+    };
+  }
 }
 
 function extractMessageText(payload) {
