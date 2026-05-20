@@ -49,9 +49,9 @@ test("preserves unmatched bold delimiters", () => {
 test("does not parse bold markers inside inline code", () => {
   const result = renderMarkdownRichText("keep `**code**` but **send bold**");
 
-  assert.equal(result.text, "keep `**code**` but send bold");
+  assert.equal(result.text, "keep **code** but send bold");
   assert.deepEqual(result.attributedBody.runs.at(-1), {
-    range: [20, 9],
+    range: [18, 9],
     attributes: {
       __kIMMessagePartAttributeName: 0,
       __kIMTextBoldAttributeName: 1,
@@ -63,9 +63,9 @@ test("does not parse bold markers inside inline code", () => {
 test("does not parse bold markers inside fenced code", () => {
   const result = renderMarkdownRichText("```\n**code**\n```\n**real**");
 
-  assert.equal(result.text, "```\n**code**\n```\nreal");
+  assert.equal(result.text, "\n**code**\n\nreal");
   assert.deepEqual(result.attributedBody.runs.at(-1), {
-    range: [17, 4],
+    range: [11, 4],
     attributes: {
       __kIMMessagePartAttributeName: 0,
       __kIMTextBoldAttributeName: 1,
@@ -86,5 +86,22 @@ test("handles multiple bold spans", () => {
       [0, 3],
       [8, 3],
     ],
+  );
+});
+
+test("normalizes inline code delimiters in plain replies", () => {
+  assert.deepEqual(renderMarkdownRichText("path `SOURCE_RULES.md` ok"), {
+    text: "path SOURCE_RULES.md ok",
+    attributedBody: null,
+  });
+});
+
+test("normalizes markdown links for iMessage plain text", () => {
+  assert.deepEqual(
+    renderMarkdownRichText("[Prompt guidance](https://developers.openai.com/api/docs/guides/prompt-guidance)"),
+    {
+      text: "Prompt guidance: https://developers.openai.com/api/docs/guides/prompt-guidance",
+      attributedBody: null,
+    },
   );
 });

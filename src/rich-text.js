@@ -3,6 +3,8 @@ export function renderMarkdownRichText(value) {
     return { text: value, attributedBody: null };
   }
 
+  value = normalizeMarkdownLinks(value);
+
   const segments = [];
   let activeBold = false;
   let inlineCode = false;
@@ -12,7 +14,6 @@ export function renderMarkdownRichText(value) {
 
   while (i < value.length) {
     if (atLineStart && value.startsWith("```", i)) {
-      appendSegment(segments, "```", activeBold);
       fencedCode = !fencedCode;
       i += 3;
       atLineStart = false;
@@ -22,7 +23,6 @@ export function renderMarkdownRichText(value) {
     const char = value[i];
     if (!fencedCode && char === "`" && !isEscaped(value, i)) {
       inlineCode = !inlineCode;
-      appendSegment(segments, char, activeBold);
       i += 1;
       atLineStart = false;
       continue;
@@ -50,7 +50,7 @@ export function renderMarkdownRichText(value) {
   const text = segments.map((segment) => segment.text).join("");
   const hasBold = segments.some((segment) => segment.bold && segment.text.length > 0);
   if (!hasBold) {
-    return { text: value, attributedBody: null };
+    return { text, attributedBody: null };
   }
 
   let location = 0;
@@ -78,6 +78,13 @@ export function renderMarkdownRichText(value) {
       runs,
     },
   };
+}
+
+function normalizeMarkdownLinks(value) {
+  return value.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label, url) => {
+    const trimmedLabel = label.trim();
+    return trimmedLabel === url ? url : `${trimmedLabel}: ${url}`;
+  });
 }
 
 function appendSegment(segments, text, bold) {

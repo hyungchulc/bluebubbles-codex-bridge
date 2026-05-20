@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -31,7 +32,7 @@ export class AudioTranscriber {
     timeoutMs = 60_000,
     maxBytes = 25 * 1024 * 1024,
     maxDurationSeconds = 60,
-    cachePath = path.resolve(process.cwd(), "state/audio-transcripts.json"),
+    cachePath = path.join(defaultStateDir(), "audio-transcripts.json"),
     fetchImpl = fetch,
     probeDurationImpl = probeAudioDurationSeconds,
   }) {
@@ -169,6 +170,13 @@ export class AudioTranscriber {
       clearTimeout(timer);
     }
   }
+}
+
+function defaultStateDir() {
+  return (
+    process.env.BRIDGE_STATE_DIR ||
+    path.join(os.homedir(), ".bluebubbles-codex-bridge", "state")
+  );
 }
 
 export function isAudioAttachment(attachment) {

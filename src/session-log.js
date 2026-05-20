@@ -95,7 +95,7 @@ function parseReplyFromFile(file, requestId) {
   };
 }
 
-class SessionReplyScanner {
+export class SessionReplyScanner {
   constructor(requestId, { initialScanBytes = INITIAL_SCAN_BYTES } = {}) {
     this.requestId = requestId;
     this.initialScanBytes = initialScanBytes;
@@ -107,11 +107,7 @@ class SessionReplyScanner {
     const text = this.readNewText(file, state);
     if (!text) return state.messages.length > 0 ? this.hit(file, state) : null;
 
-    const lines = `${state.carry}${text}`.split(/\r?\n/);
-    state.carry = lines.pop() || "";
-    for (const line of lines) {
-      this.parseLine(state, line);
-    }
+    consumeJsonlText(state, text, (line) => this.parseLine(state, line));
     return state.messages.length > 0 ? this.hit(file, state) : null;
   }
 
@@ -134,12 +130,14 @@ class SessionReplyScanner {
 
   readNewText(file, state) {
     const stat = fs.statSync(file);
+    let startedMidFile = false;
     if (state.offset === null || stat.size < state.offset) {
       const windowSize = Number.isFinite(this.initialScanBytes)
         ? Math.max(0, Math.min(stat.size, this.initialScanBytes))
         : stat.size;
       state.offset = stat.size - windowSize;
       state.carry = "";
+      startedMidFile = state.offset > 0;
     }
     if (stat.size <= state.offset) return "";
 
@@ -151,7 +149,6 @@ class SessionReplyScanner {
     } finally {
       fs.closeSync(fd);
     }
-    const startedMidFile = state.offset > 0 && state.carry === "";
     state.offset = stat.size;
     const text = buffer.toString("utf8");
     if (!startedMidFile) return text;
@@ -171,8 +168,9 @@ class SessionReplyScanner {
       state.sessionId = entry.payload.id;
     }
 
-    const serialized = JSON.stringify(entry);
-    if (serialized.includes(this.requestId)) state.seenRequest = true;
+    if (entryContainsUserRequest(entry, this.requestId)) {
+      state.seenRequest = true;
+    }
     if (!state.seenRequest) return;
 
     const payload = entry.payload;
@@ -215,7 +213,13 @@ class SessionReplyScanner {
       const finalAnswer = payload.last_agent_message || null;
       if (finalAnswer) {
         const last = state.messages.at(-1);
-        if (!last || last.text !== finalAnswer) {
+        const hasPriorFinalAnswer = state.messages.some(
+          (message) => message.phase === "final_answer" && message.id !== "task_complete",
+        );
+        const hasPriorSameText = state.messages.some(
+          (message) => message.text === finalAnswer,
+        );
+        if (!hasPriorFinalAnswer && !hasPriorSameText && (!last || last.text !== finalAnswer)) {
           state.messages.push({
             id: "task_complete",
             phase: "final_answer",
@@ -236,6 +240,169 @@ class SessionReplyScanner {
   }
 }
 
+export class SessionThreadTailScanner {
+  constructor({ offset = null } = {}) {
+    this.initialOffset = Number.isFinite(Number(offset)) ? Number(offset) : null;
+    this.files = new Map();
+  }
+
+  scanFile(file) {
+    const state = this.stateForFile(file);
+    const text = this.readNewText(file, state);
+    const messages = [];
+    if (text) {
+      consumeJsonlText(state, text, (line) => this.parseLine(state, line, messages));
+    }
+    return {
+      file,
+      messages,
+      offset: state.offset,
+      complete: state.complete,
+      completedAt: state.completedAt,
+    };
+  }
+
+  stateForFile(file) {
+    let state = this.files.get(file);
+    if (state) return state;
+    state = {
+      offset: this.initialOffset,
+      carry: "",
+      complete: false,
+      completedAt: null,
+      sessionId: null,
+      seenMessageKeys: new Set(),
+      seenTexts: new Set(),
+      seenFinalAnswer: false,
+    };
+    this.files.set(file, state);
+    return state;
+  }
+
+  readNewText(file, state) {
+    const stat = fs.statSync(file);
+    if (state.offset === null || stat.size < state.offset) {
+      state.offset = stat.size;
+      state.carry = "";
+    }
+    if (stat.size <= state.offset) return "";
+
+    const length = stat.size - state.offset;
+    const buffer = Buffer.allocUnsafe(length);
+    const fd = fs.openSync(file, "r");
+    try {
+      fs.readSync(fd, buffer, 0, length, state.offset);
+    } finally {
+      fs.closeSync(fd);
+    }
+    state.offset = stat.size;
+    return buffer.toString("utf8");
+  }
+
+  parseLine(state, line, messages) {
+    if (!line.trim()) return;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (entry.type === "session_meta" && entry.payload?.id) {
+      state.sessionId = entry.payload.id;
+    }
+
+    const payload = entry.payload;
+    if (
+      entry.type === "response_item" &&
+      payload?.type === "message" &&
+      payload?.role === "assistant"
+    ) {
+      const text = extractMessageText(payload);
+      if (!text) return;
+      const key = payload.id || `${payload.phase || "assistant"}:${text}`;
+      if (state.seenMessageKeys.has(key)) return;
+      state.seenMessageKeys.add(key);
+      state.seenTexts.add(text);
+      if (payload.phase === "final_answer") state.seenFinalAnswer = true;
+      const message = {
+        id: payload.id || null,
+        phase: payload.phase || "assistant",
+        text,
+      };
+      messages.push(message);
+      return;
+    }
+
+    if (entry.type === "response_item" && payload?.type === "image_generation_call") {
+      const attachment = imageAttachmentFromCall({ sessionId: state.sessionId, payload });
+      if (!attachment) return;
+      const key = payload.id || `${attachment.filePath}:${attachment.name}`;
+      if (state.seenMessageKeys.has(key)) return;
+      state.seenMessageKeys.add(key);
+      messages.push({
+        id: payload.id || null,
+        phase: "attachment",
+        text: "",
+        attachments: [attachment],
+      });
+      return;
+    }
+
+    if (entry.type === "event_msg" && payload?.type === "task_complete") {
+      state.complete = true;
+      state.completedAt = payload.completed_at || null;
+      const finalAnswer = payload.last_agent_message || null;
+      if (!finalAnswer) return;
+      const key = `task_complete:${state.completedAt || finalAnswer}`;
+      if (
+        state.seenMessageKeys.has(key) ||
+        state.seenFinalAnswer ||
+        state.seenTexts.has(finalAnswer)
+      ) {
+        return;
+      }
+      state.seenMessageKeys.add(key);
+      state.seenTexts.add(finalAnswer);
+      state.seenFinalAnswer = true;
+      messages.push({
+        id: "task_complete",
+        phase: "final_answer",
+        text: finalAnswer,
+      });
+    }
+  }
+}
+
+function consumeJsonlText(state, text, parseLine) {
+  const lines = `${state.carry}${text}`.split(/\r?\n/);
+  state.carry = lines.pop() || "";
+  for (const line of lines) {
+    parseLine(line);
+  }
+  flushCompleteCarry(state, parseLine);
+}
+
+function flushCompleteCarry(state, parseLine) {
+  if (!state.carry) return;
+  if (!state.carry.trim()) {
+    state.carry = "";
+    return;
+  }
+  if (!isCompleteJsonLine(state.carry)) return;
+  const line = state.carry;
+  state.carry = "";
+  parseLine(line);
+}
+
+function isCompleteJsonLine(line) {
+  try {
+    JSON.parse(line);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function extractMessageText(payload) {
   if (typeof payload?.content === "string") return payload.content;
   if (Array.isArray(payload?.content)) {
@@ -245,6 +412,22 @@ function extractMessageText(payload) {
       .trim();
   }
   return null;
+}
+
+function entryContainsUserRequest(entry, requestId) {
+  if (!requestId) return false;
+  const payload = entry?.payload;
+  if (
+    entry?.type === "response_item" &&
+    payload?.type === "message" &&
+    payload?.role === "user"
+  ) {
+    return extractMessageText(payload).includes(requestId);
+  }
+  if (entry?.type === "event_msg" && payload?.type === "user_message") {
+    return String(payload.message || "").includes(requestId);
+  }
+  return false;
 }
 
 function imageAttachmentFromCall({ sessionId, payload }) {
@@ -272,13 +455,19 @@ function imageAttachmentFromCall({ sessionId, payload }) {
   const fallbackPath = sessionId
     ? path.join(
         os.homedir(),
-        "Aria",
+        ".bluebubbles-codex-bridge",
         "state",
         "generated-images",
         sessionId,
         `${payload.id}.png`,
       )
-    : path.join(os.homedir(), "Aria", "state", "generated-images", `${payload.id}.png`);
+    : path.join(
+        os.homedir(),
+        ".bluebubbles-codex-bridge",
+        "state",
+        "generated-images",
+        `${payload.id}.png`,
+      );
   fs.mkdirSync(path.dirname(fallbackPath), { recursive: true });
   if (!fs.existsSync(fallbackPath)) {
     fs.writeFileSync(fallbackPath, Buffer.from(payload.result, "base64"));

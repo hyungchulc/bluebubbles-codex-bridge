@@ -2,7 +2,6 @@
 set -euo pipefail
 
 PORT="${CODEX_REMOTE_DEBUG_PORT:-9229}"
-CODEX_APP_PATH="${CODEX_APP_PATH:-/Applications/Codex.app}"
 ORIGIN="http://127.0.0.1:${PORT}"
 
 if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
@@ -10,7 +9,7 @@ if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
   exit 0
 fi
 
-open -g -n -a "${CODEX_APP_PATH}" --args \
+open -g -j -n -a /Applications/Codex.app --args \
   "--remote-debugging-port=${PORT}" \
   "--remote-allow-origins=${ORIGIN}"
 

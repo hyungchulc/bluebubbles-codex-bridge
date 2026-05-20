@@ -25,6 +25,58 @@ export class BlueBubblesClient {
     };
   }
 
+  async serverInfo() {
+    return this.requestJson("GET", "/api/v1/server/info", {});
+  }
+
+  async createFaceTimeSession() {
+    return this.postJson("/api/v1/facetime/session", {});
+  }
+
+  async answerFaceTimeCall(callUuid) {
+    if (!callUuid) throw new Error("answerFaceTimeCall requires callUuid");
+    return this.postJson(`/api/v1/facetime/answer/${encodeURIComponent(callUuid)}`, {});
+  }
+
+  async answerFaceTimeCallRaw(callUuid) {
+    if (!callUuid) throw new Error("answerFaceTimeCallRaw requires callUuid");
+    return this.postJson(`/api/v1/facetime/answer-raw/${encodeURIComponent(callUuid)}`, {});
+  }
+
+  async generateFaceTimeLink(callUuid) {
+    if (!callUuid) throw new Error("generateFaceTimeLink requires callUuid");
+    return this.postJson(`/api/v1/facetime/link/${encodeURIComponent(callUuid)}`, {});
+  }
+
+  async getFaceTimeActiveLinks() {
+    return this.postJson("/api/v1/facetime/active-links", {});
+  }
+
+  async admitFaceTimeSelf(callUuid, { lookbackMs = 30_000 } = {}) {
+    if (!callUuid) throw new Error("admitFaceTimeSelf requires callUuid");
+    return this.postJson(`/api/v1/facetime/admit-self/${encodeURIComponent(callUuid)}`, {
+      lookbackMs,
+    });
+  }
+
+  async admitFaceTimeParticipant({ conversationUuid, handleUuid }) {
+    if (!conversationUuid) {
+      throw new Error("admitFaceTimeParticipant requires conversationUuid");
+    }
+    if (!handleUuid) {
+      throw new Error("admitFaceTimeParticipant requires handleUuid");
+    }
+    return this.postJson("/api/v1/facetime/admit", {
+      conversationUuid,
+      handleUuid,
+    });
+  }
+
+  async leaveFaceTimeCall(callUuid) {
+    if (!callUuid) throw new Error("leaveFaceTimeCall requires callUuid");
+    return this.postJson(`/api/v1/facetime/leave/${encodeURIComponent(callUuid)}`, {});
+  }
+
   async sendText({
     chatGuid,
     address,
@@ -33,6 +85,10 @@ export class BlueBubblesClient {
     attributedBody = null,
     selectedMessageGuid = null,
     partIndex = 0,
+    ddScan = null,
+    payloadData = null,
+    balloonBundleId = null,
+    timeoutMs = null,
   }) {
     if (!this.password) {
       throw new Error("BLUEBUBBLES_PASSWORD is required to send messages");
@@ -50,12 +106,33 @@ export class BlueBubblesClient {
     if (attributedBody) body.attributedBody = attributedBody;
     if (selectedMessageGuid) body.selectedMessageGuid = selectedMessageGuid;
     if (selectedMessageGuid || partIndex) body.partIndex = partIndex;
+    if (typeof ddScan === "boolean") body.ddScan = ddScan;
+    if (payloadData) body.payloadData = payloadData;
+    if (balloonBundleId) body.balloonBundleId = balloonBundleId;
 
-    const response = await fetch(this.authUrl(this.sendTextPath), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const controller = timeoutMs ? new AbortController() : null;
+    const timeout = controller
+      ? setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs)))
+      : null;
+    timeout?.unref?.();
+    let response;
+    try {
+      response = await fetch(this.authUrl(this.sendTextPath), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller?.signal,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error(`BlueBubbles send timed out after ${timeoutMs}ms`);
+        timeoutError.cause = error;
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
     const data = await readJsonOrText(response);
     if (!response.ok) {
       const error = new Error(
@@ -146,6 +223,87 @@ export class BlueBubblesClient {
     return data;
   }
 
+  async uploadAttachment({ filePath, name = null }) {
+    if (!filePath) {
+      throw new Error("uploadAttachment requires filePath");
+    }
+    const bytes = fs.readFileSync(filePath);
+    const form = new FormData();
+    form.set("attachment", new Blob([bytes]), name || path.basename(filePath));
+    const response = await fetch(this.authUrl("/api/v1/attachment/upload"), {
+      method: "POST",
+      body: form,
+    });
+    const data = await readJsonOrText(response);
+    if (!response.ok) {
+      const error = new Error(
+        `BlueBubbles attachment upload failed (${response.status}): ${JSON.stringify(data)}`,
+      );
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
+  async sendMultipart({
+    chatGuid,
+    parts,
+    ddScan = null,
+    payloadData = null,
+    balloonBundleId = null,
+  }) {
+    if (!chatGuid) {
+      throw new Error("sendMultipart requires chatGuid");
+    }
+    if (!Array.isArray(parts) || parts.length === 0) {
+      throw new Error("sendMultipart requires parts");
+    }
+    const body = { chatGuid, parts, tempGuid: makeTempGuid() };
+    if (typeof ddScan === "boolean") body.ddScan = ddScan;
+    if (payloadData) body.payloadData = payloadData;
+    if (balloonBundleId) body.balloonBundleId = balloonBundleId;
+    return this.postJson("/api/v1/message/multipart", body);
+  }
+
+  async sendRichLink({
+    chatGuid,
+    text,
+    payloadData,
+    balloonBundleId,
+    attachmentFilePath = null,
+    attachmentName = null,
+  }) {
+    if (!attachmentFilePath) {
+      return this.sendText({
+        chatGuid,
+        text,
+        method: "private-api",
+        ddScan: false,
+        payloadData,
+        balloonBundleId,
+      });
+    }
+    const uploadResult = await this.uploadAttachment({
+      filePath: attachmentFilePath,
+      name: attachmentName || path.basename(attachmentFilePath),
+    });
+    const uploadPath = uploadResult?.data?.path;
+    if (!uploadPath) {
+      throw new Error(`BlueBubbles upload response did not include a path: ${JSON.stringify(uploadResult)}`);
+    }
+    return this.sendMultipart({
+      chatGuid,
+      parts: [
+        { partIndex: 0, text },
+        { partIndex: 1, attachment: uploadPath, name: attachmentName || path.basename(attachmentFilePath) },
+      ],
+      ddScan: false,
+      payloadData,
+      balloonBundleId,
+    });
+  }
+
   async downloadAttachment({ guid, outputPath = null, force = false }) {
     if (!guid) throw new Error("downloadAttachment requires guid");
     const suffix = force ? "/download/force" : "/download";
@@ -186,9 +344,14 @@ export class BlueBubblesClient {
     });
     const data = await readJsonOrText(response);
     if (!response.ok) {
-      throw new Error(
+      const error = new Error(
         `BlueBubbles ${method} ${path} failed (${response.status}): ${JSON.stringify(data)}`,
       );
+      error.status = response.status;
+      error.data = data;
+      error.method = method;
+      error.path = path;
+      throw error;
     }
     return data;
   }

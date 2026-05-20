@@ -40,3 +40,22 @@ test("completed jobs are not listed as open", () => {
 
   assert.deepEqual(store.listOpen(), []);
 });
+
+test("stale started jobs are not listed as open", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aria-jobs-test-"));
+  const old = new Date("2026-01-01T00:00:00.000Z");
+  const current = new Date("2026-01-01T05:00:00.000Z");
+  const store = new IncomingJobStore({
+    logPath: path.join(dir, "jobs.jsonl"),
+    now: () => old,
+  });
+
+  store.start({
+    incoming: { guid: "message-old", chatGuid: "chat-1", attachments: [] },
+    prompt: "prompt text",
+  });
+  store.now = () => current;
+
+  assert.deepEqual(store.listOpen(), []);
+  assert.equal(store.listOpen({ maxAgeMs: 6 * 60 * 60 * 1000 }).length, 1);
+});

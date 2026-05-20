@@ -1,7 +1,14 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
-const DEFAULT_LOG_PATH = path.resolve(process.cwd(), "state/bluebubbles-incoming-jobs.jsonl");
+const DEFAULT_LOG_PATH = path.join(
+  process.env.BRIDGE_STATE_DIR || path.join(os.homedir(), ".bluebubbles-codex-bridge", "state"),
+  "bluebubbles-incoming-jobs.jsonl",
+);
+const DEFAULT_OPEN_JOB_MAX_AGE_MS = Number(
+  process.env.INCOMING_JOB_OPEN_MAX_AGE_MS || 30 * 60 * 1000,
+);
 
 export class IncomingJobStore {
   constructor({ logPath = DEFAULT_LOG_PATH, now = () => new Date() } = {}) {
@@ -30,11 +37,17 @@ export class IncomingJobStore {
     });
   }
 
-  listOpen() {
+  listOpen({ maxAgeMs = DEFAULT_OPEN_JOB_MAX_AGE_MS } = {}) {
     const open = new Map();
+    const minStartedAtMs = this.now().getTime() - maxAgeMs;
     for (const event of this.readEvents()) {
       if (!event?.id || !event?.type) continue;
       if (event.type === "started") {
+        const startedAtMs = Date.parse(event.ts || "");
+        if (Number.isFinite(startedAtMs) && startedAtMs < minStartedAtMs) {
+          open.delete(event.id);
+          continue;
+        }
         open.set(event.id, { ...event, status: "started" });
         continue;
       }

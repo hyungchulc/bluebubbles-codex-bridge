@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 BRIDGE_PORT="${BRIDGE_PORT:-3099}"
-BRIDGE_LAUNCH_LABEL="${BRIDGE_LAUNCH_LABEL:-local.aria.bluebubbles-codex-bridge}"
+BRIDGE_LAUNCH_LABEL="${BRIDGE_LAUNCH_LABEL:-local.bluebubbles-codex-bridge}"
 LOG_DIR="${ROOT}/logs"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
